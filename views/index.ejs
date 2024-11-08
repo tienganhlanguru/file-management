@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Languru - File Manager</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">Languru - File Manager</h1>
+
+        <!-- Form tạo thư mục -->
+        <form id="createFolderForm" class="mb-4">
+            <div class="mb-3">
+                <label for="folderName" class="form-label">Create New Folder</label>
+                <input type="text" class="form-control" id="folderName" placeholder="Enter folder name" required>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="createFolder()">Create Folder</button>
+        </form>
+
+        <!-- Form upload file -->
+        <form id="uploadForm" action="/api/files/upload" method="POST" enctype="multipart/form-data" class="mb-4">
+            <div class="mb-3">
+                <label for="file" class="form-label">Choose Files</label>
+                <input type="file" class="form-control" id="file" name="files" multiple required>
+            </div>
+            <div class="mb-3">
+                <label for="folderSelect" class="form-label">Select Folder</label>
+                <select class="form-select" id="folderSelect" name="folder">
+                    <option value="">Default Folder</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="filename" class="form-label">File Name</label>
+                <input type="text" class="form-control" id="filename" name="filename"
+                    placeholder="Enter custom file name">
+            </div>
+            <input type="hidden" name="currentPath" id="currentPathHidden" value="">
+            <button type="submit" id="uploadButton" class="btn btn-primary">Upload</button>
+
+            <!-- Thanh tiến trình -->
+            <div class="progress mt-2" style="display: none;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+                    style="width: 0%;" id="uploadProgress"></div>
+            </div>
+        </form>
+
+        <!-- Điều hướng thư mục -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <button class="btn btn-secondary" onclick="goBack()" id="backButton" style="display: none;">Back</button>
+            <h4 id="currentFolder">Current Folder: /</h4>
+        </div>
+
+        <!-- Hiển thị các thư mục và file -->
+        <div id="file-list" class="row"></div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.7/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.min.js"></script>
+
+    <script>
+        let currentPath = ''; // Đường dẫn hiện tại
+
+        // Tải danh sách file và thư mục hiện tại
+        function loadContents(path = '') {
+            currentPath = path;
+            document.getElementById('currentFolder').textContent = `Current Folder: /${currentPath}`;
+            document.getElementById('backButton').style.display = currentPath ? 'inline' : 'none';
+
+            fetch(`/api/files/contents?path=${encodeURIComponent(currentPath)}`)
+                .then(response => response.json())
+                .then(data => {
+                    const fileList = document.getElementById('file-list');
+                    fileList.innerHTML = '';
+
+                    // Hiển thị thư mục con
+                    data.folders.forEach(folder => {
+                        const colDiv = document.createElement('div');
+                        colDiv.className = 'col-md-4 mb-4';
+
+                        const card = document.createElement('div');
+                        card.className = 'card h-100';
+
+                        const cardBody = document.createElement('div');
+                        cardBody.className = 'card-body text-center';
+                        cardBody.innerHTML = `<i class="bi bi-folder" style="font-size: 3rem;"></i>`;
+
+                        const folderName = document.createElement('h5');
+                        folderName.className = 'card-title';
+                        folderName.textContent = folder;
+
+                        const openButton = document.createElement('button');
+                        openButton.className = 'btn btn-sm btn-primary mt-2';
+                        openButton.textContent = 'Open';
+                        openButton.onclick = () => loadContents(currentPath ? `${currentPath}/${folder}` : folder);
+
+                        cardBody.appendChild(folderName);
+                        cardBody.appendChild(openButton);
+                        card.appendChild(cardBody);
+                        colDiv.appendChild(card);
+                        fileList.appendChild(colDiv);
+                    });
+
+                    // Hiển thị file
+                    data.files.forEach(file => {
+                        const colDiv = document.createElement('div');
+                        colDiv.className = 'col-md-4 mb-4';
+
+                        const card = document.createElement('div');
+                        card.className = 'card h-100';
+
+                        const filePreview = document.createElement('div');
+                        filePreview.className = 'card-body text-center';
+
+                        const extension = file.filename.split('.').pop().toLowerCase();
+                        let preview;
+                        if (['jpg', 'jpeg', 'png', 'gif'].includes(extension)) {
+                            preview = document.createElement('img');
+                            preview.src = file.filepath;
+                            preview.className = 'card-img-top';
+                            preview.alt = file.filename;
+                        } else if (['mp4', 'mov', 'avi'].includes(extension)) {
+                            preview = document.createElement('video');
+                            preview.src = file.filepath;
+                            preview.controls = true;
+                            preview.className = 'card-img-top';
+                        } else if (['mp3', 'wav', 'ogg'].includes(extension)) {
+                            preview = document.createElement('audio');
+                            preview.src = file.filepath;
+                            preview.controls = true;
+                            preview.className = 'w-100';
+                        } else {
+                            preview = document.createElement('div');
+                            preview.innerHTML = `<i class="bi bi-file-earmark-text" style="font-size: 3rem;"></i>`;
+                        }
+
+                        filePreview.appendChild(preview);
+
+                        const fileName = document.createElement('h5');
+                        fileName.className = 'card-title';
+                        fileName.textContent = file.filename;
+
+                        const downloadButton = document.createElement('a');
+                        downloadButton.className = 'btn btn-sm btn-secondary mt-2 me-2';
+                        downloadButton.textContent = 'Download';
+                        downloadButton.href = `/api/files/download/${file._id}`; // Đảm bảo `file._id` được truyền đúng
+
+                        const deleteButton = document.createElement('button');
+                        deleteButton.className = 'btn btn-sm btn-danger mt-2';
+                        deleteButton.textContent = 'Delete';
+                        deleteButton.onclick = () => deleteFile(file._id, colDiv); // Đảm bảo `file._id` được truyền đúng
+
+
+                        filePreview.appendChild(fileName);
+                        filePreview.appendChild(downloadButton);
+                        filePreview.appendChild(deleteButton);
+                        card.appendChild(filePreview);
+                        colDiv.appendChild(card);
+                        fileList.appendChild(colDiv);
+                    });
+                });
+        }
+
+        // Hàm xóa file
+        function deleteFile(fileId, fileElement) {
+            if (confirm('Are you sure you want to delete this file?')) {
+                fetch(`/api/files/delete/${fileId}`, { method: 'DELETE' })
+                    .then(response => {
+                        if (response.ok) {
+                            fileElement.remove();
+                        } else {
+                            alert('Error deleting file');
+                        }
+                    });
+            }
+        }
+
+        // Quay lại thư mục trước
+        function goBack() {
+            if (!currentPath) return;
+            const parentPath = currentPath.split('/').slice(0, -1).join('/');
+            loadContents(parentPath);
+        }
+
+        // Tạo thư mục mới
+        function createFolder() {
+            const folderName = document.getElementById('folderName').value;
+            if (!folderName) return alert('Please enter a folder name.');
+
+            fetch('/api/files/create-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: currentPath, folderName })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Folder created successfully!');
+                        loadContents(currentPath);
+                    } else {
+                        alert('Error creating folder');
+                    }
+                });
+        }
+
+        // Tải danh sách thư mục để chọn khi upload file
+        function loadFolders() {
+            fetch('/api/files/folders')
+                .then(response => response.json())
+                .then(folders => {
+                    const folderSelect = document.getElementById('folderSelect');
+                    folderSelect.innerHTML = `<option value="">Default Folder</option>`;
+                    folders.forEach(folder => {
+                        const option = document.createElement('option');
+                        option.value = folder;
+                        option.textContent = folder;
+                        folderSelect.appendChild(option);
+                    });
+                });
+        }
+
+        // Tải nội dung của thư mục gốc khi tải trang
+        document.addEventListener('DOMContentLoaded', () => {
+            loadContents();
+            loadFolders();
+        });
+
+        // Xử lý sự kiện khi form upload được gửi
+        document.getElementById('uploadForm').addEventListener('submit', function (event) {
+            event.preventDefault(); // Ngăn chặn hành động gửi form mặc định
+
+            const uploadButton = document.getElementById('uploadButton');
+            const progressBar = document.getElementById('uploadProgress');
+            const progressContainer = document.querySelector('.progress');
+
+            // Vô hiệu hóa nút upload
+            uploadButton.disabled = true;
+
+            // Tạo FormData từ form upload
+            const formData = new FormData(this);
+
+            // Bắt đầu upload
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', this.action, true);
+
+            // Cập nhật thanh tiến trình
+            xhr.upload.addEventListener('progress', function (event) {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    progressBar.style.width = percentComplete + '%';
+                    progressBar.textContent = Math.round(percentComplete) + '%';
+
+                    // Hiển thị thanh tiến trình
+                    progressContainer.style.display = 'block';
+                }
+            });
+
+            // Khi upload hoàn tất
+            xhr.onload = function () {
+                if (xhr.status === 200) {
+                    alert('Files uploaded successfully!');
+                    loadContents(currentPath); // Tải lại nội dung để cập nhật danh sách file
+                    progressContainer.style.display = 'none'; // Ẩn thanh tiến trình
+                } else {
+                    alert('Error uploading files');
+                }
+                uploadButton.disabled = false; // Kích hoạt lại nút upload
+            };
+
+            xhr.send(formData); // Gửi dữ liệu
+        });
+    </script>
+</body>
+
+</html>
